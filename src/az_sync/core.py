@@ -127,6 +127,8 @@ class AzSync:
         self.apikey = apikey
         self.db = AzDatabase(db_path)
         self.output_dir = Path(output_dir)
+        if not self.output_dir.exists():
+            self.output_dir.mkdir(parents=True)
         self.max_workers = max_workers
         self.download_queue = Queue[APKRecord](maxsize=100)
         self.progress_queue = Queue[tuple[APKRecord, int]]()
