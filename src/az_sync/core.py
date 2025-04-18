@@ -206,8 +206,8 @@ class AzSync:
 
 def sync(
     apikey: str = typer.Argument(..., help="Androzoo API key"),
-    db_path: Path | str = typer.Option("/data/apk/apkindex.db", help="Path to the APK database"),
-    output_dir: Path | str = typer.Option(
+    db_path: str = typer.Option("/data/apk/apkindex.db", help="Path to the APK database"),
+    output_dir: str = typer.Option(
         "/data/apk/downloads", help="Directory to save downloaded APK files"
     ),
     max_workers: int = typer.Option(40, help="Number of concurrent download workers"),
