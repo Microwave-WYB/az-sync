@@ -24,10 +24,12 @@ from rich.progress import (
     TransferSpeedColumn,
 )
 
+logger.remove()
 logger.add(
     "logs/sync.log",
     rotation="10 MB",
 )
+
 client: httpx.Client = httpx.Client()
 app = typer.Typer(
     help="Sync APK files from Androzoo.",
@@ -209,6 +211,17 @@ class AzDatabase:
         conn.close()
         print("\nImport completed.")
 
+    def count(self) -> int:
+        """Count the total number of APK records in the database."""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT COUNT(*) FROM apkrecord")
+        total = cursor.fetchone()[0]
+
+        conn.close()
+        return total
+
 
 class AzSync:
     def __init__(
@@ -225,34 +238,35 @@ class AzSync:
             self.output_dir.mkdir(parents=True)
         self.max_workers = max_workers
         self.download_queue = Queue[APKRecord](maxsize=100)
-        self.progress_queue = Queue[tuple[APKRecord, int]]()
+        self.progress_queue = Queue[str]()  # Queue for sha256 of completed downloads
 
     def progress(self) -> None:
         """Show progress of downloads."""
-        tasks: dict[str, TaskID] = {}
+        total_apks = self.db.count()
+        completed = 0
+
         with Progress(
             TextColumn("[progress.description]{task.description}"),
             BarColumn(),
-            DownloadColumn(),
-            TransferSpeedColumn(),
+            "{task.completed}/{task.total}",
             TimeRemainingColumn(),
         ) as pbar:
+            task_id = pbar.add_task("Downloading APKs", total=total_apks)
+
             while True:
                 try:
-                    record, size = self.progress_queue.get()
+                    sha256 = self.progress_queue.get()
                 except ShutDown:
                     break
-                if record.sha256 not in tasks:
-                    tasks[record.sha256] = pbar.add_task(
-                        description=f"Downloading {record.sha256}", total=size
-                    )
-                else:
-                    pbar.update(
-                        tasks[record.sha256],
-                        advance=size,
-                    )
-                if pbar.tasks[tasks[record.sha256]].completed >= record.apk_size:
-                    tasks.pop(record.sha256)
+
+                completed += 1
+                pbar.update(task_id, advance=1)
+
+                # Log progress
+                logger.info(f"Download completed for APK: {sha256}")
+
+                if completed >= total_apks:
+                    break
 
     def download_worker(self) -> None:
         """Download APK files."""
@@ -261,26 +275,32 @@ class AzSync:
                 record = self.download_queue.get()
             except ShutDown:
                 break
-            with client.stream(
-                "GET",
-                "https://androzoo.uni.lu/api/download",
-                params=dict(
-                    sha256=record.sha256,
-                    apikey=self.apikey,  # Added apikey to the parameters
-                ),
-            ) as stream:
-                file_size = int(stream.headers["Content-Length"])
-                file_path = self.output_dir / f"{record.sha256}.apk"
-                if file_path.exists():
-                    logger.info(f"File {file_path} already exists, skipping download.")
-                    continue
-                part_path = self.output_dir / f"{record.sha256}.apk.part"
-                with open(part_path, "wb") as f:
-                    self.progress_queue.put((record, file_size))  # register the progress
-                    for chunk in stream.iter_bytes(1024 * 1024):
-                        f.write(chunk)
-                        self.progress_queue.put((record, len(chunk)))
-                part_path.rename(file_path)
+
+            file_path = self.output_dir / f"{record.sha256}.apk"
+            if file_path.exists():
+                logger.info(f"File {file_path} already exists, skipping download.")
+                self.progress_queue.put(record.sha256)
+                continue
+
+            try:
+                with client.stream(
+                    "GET",
+                    "https://androzoo.uni.lu/api/download",
+                    params=dict(
+                        sha256=record.sha256,
+                        apikey=self.apikey,
+                    ),
+                ) as stream:
+                    part_path = self.output_dir / f"{record.sha256}.apk.part"
+                    with open(part_path, "wb") as f:
+                        for chunk in stream.iter_bytes(1024 * 1024):
+                            f.write(chunk)
+                    part_path.rename(file_path)
+
+                # Push to progress queue on success
+                self.progress_queue.put(record.sha256)
+            except Exception as e:
+                logger.error(f"Failed to download APK {record.sha256}: {e}")
 
     def download_preparation_worker(self) -> None:
         """Enqueue a record for download."""
@@ -291,10 +311,12 @@ class AzSync:
     def run(self) -> None:
         progress_thread = threading.Thread(target=self.progress, daemon=True)
         progress_thread.start()
+
         download_preparation_thread = threading.Thread(
             target=self.download_preparation_worker, daemon=True
         )
         download_preparation_thread.start()
+
         for _ in range(self.max_workers):
             download_thread = threading.Thread(target=self.download_worker, daemon=True)
             download_thread.start()
