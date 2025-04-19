@@ -161,6 +161,10 @@ class AzDatabase:
 
     def import_csv(self, csv_path: Path | str) -> None:
         """Import APK records from a CSV file."""
+        if Path(csv_path).is_dir():
+            csv_path = Path(csv_path) / "apkindex.csv"
+        if not Path(csv_path).exists():
+            raise FileNotFoundError(f"CSV file not found: {csv_path}")
         total = (
             int(
                 subprocess.check_output(
@@ -232,24 +236,22 @@ class AzSync:
             DownloadColumn(),
             TransferSpeedColumn(),
             TimeRemainingColumn(),
-        ) as self.pbar:
+        ) as pbar:
             while True:
                 try:
-                    record, downloaded = self.progress_queue.get()
+                    record, size = self.progress_queue.get()
                 except ShutDown:
                     break
                 if record.sha256 not in tasks:
-                    tasks[record.sha256] = self.pbar.add_task(
-                        description=f"Downloading {record.sha256}",
-                        total=record.apk_size,
+                    tasks[record.sha256] = pbar.add_task(
+                        description=f"Downloading {record.sha256}", total=size
                     )
-                self.pbar.update(
-                    tasks[record.sha256],
-                    completed=downloaded,
-                )
-                if self.pbar.tasks[tasks[record.sha256]].completed >= record.apk_size:
-                    print(f"Downloaded {record.sha256}")
-                    self.pbar.remove_task(tasks[record.sha256])
+                else:
+                    pbar.update(
+                        tasks[record.sha256],
+                        advance=size,
+                    )
+                if pbar.tasks[tasks[record.sha256]].completed >= record.apk_size:
                     tasks.pop(record.sha256)
 
     def download_worker(self) -> None:
@@ -267,12 +269,18 @@ class AzSync:
                     apikey=self.apikey,  # Added apikey to the parameters
                 ),
             ) as stream:
+                file_size = int(stream.headers["Content-Length"])
+                file_path = self.output_dir / f"{record.sha256}.apk"
+                if file_path.exists():
+                    logger.info(f"File {file_path} already exists, skipping download.")
+                    continue
                 part_path = self.output_dir / f"{record.sha256}.apk.part"
                 with open(part_path, "wb") as f:
+                    self.progress_queue.put((record, file_size))  # register the progress
                     for chunk in stream.iter_bytes(1024 * 1024):
                         f.write(chunk)
                         self.progress_queue.put((record, len(chunk)))
-                part_path.rename(part_path.with_suffix(""))  # Remove .part suffix
+                part_path.rename(file_path)
 
     def download_preparation_worker(self) -> None:
         """Enqueue a record for download."""
