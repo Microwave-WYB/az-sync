@@ -105,7 +105,7 @@ class AzDatabase:
             markets TEXT
         )
         """)
-
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_pkg_name ON apkrecord (pkg_name)")
         conn.commit()
         conn.close()
 
