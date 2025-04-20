@@ -11,18 +11,9 @@ from typing import Any, List, Optional
 
 import httpx
 import pandas as pd
-import rich
 import typer
 from loguru import logger
-from rich.progress import (
-    BarColumn,
-    DownloadColumn,
-    Progress,
-    TaskID,
-    TextColumn,
-    TimeRemainingColumn,
-    TransferSpeedColumn,
-)
+from tqdm import tqdm
 
 logger.remove()
 logger.add(
@@ -40,6 +31,14 @@ app = typer.Typer(
 def cleanup() -> None:
     """Close the HTTP client on exit."""
     client.close()
+
+
+def consume[T](queue: Queue[T]) -> Iterator[T]:
+    while True:
+        try:
+            yield queue.get()
+        except ShutDown:
+            break
 
 
 @dataclass(repr=True)
@@ -243,30 +242,8 @@ class AzSync:
     def progress(self) -> None:
         """Show progress of downloads."""
         total_apks = self.db.count()
-        completed = 0
-
-        with Progress(
-            TextColumn("[progress.description]{task.description}"),
-            BarColumn(),
-            "{task.completed}/{task.total}",
-            TimeRemainingColumn(),
-        ) as pbar:
-            task_id = pbar.add_task("Downloading APKs", total=total_apks)
-
-            while True:
-                try:
-                    sha256 = self.progress_queue.get()
-                except ShutDown:
-                    break
-
-                completed += 1
-                pbar.update(task_id, advance=1)
-
-                # Log progress
-                logger.info(f"Download completed for APK: {sha256}")
-
-                if completed >= total_apks:
-                    break
+        for sha256 in tqdm(consume(self.progress_queue), desc="Downloading APKs", total=total_apks):
+            logger.info(f"Download completed for APK: {sha256}")
 
     def download_worker(self) -> None:
         """Download APK files."""
@@ -371,8 +348,4 @@ def search(
     db = AzDatabase(db_path)
     records = db.search(namelike)
     for record in records:
-        rich.print(json.dumps(asdict(record), indent=2))
-
-
-if __name__ == "__main__":
-    app()
+        print(json.dumps(asdict(record), indent=2))
