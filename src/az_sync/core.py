@@ -288,7 +288,7 @@ class AzSync:
                 if "android.permission.BLUETOOTH" in line:
                     metadata = json.loads(line)
                     name = metadata["docid"]
-                    logger.info(f"Found APK {name}")
+                    logger.info(f"Found Bluetooth app: {name}")
                     for record in self.db.search(name):
                         self.download_queue.put(record)
 
