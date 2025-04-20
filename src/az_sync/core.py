@@ -15,7 +15,7 @@ import typer
 from loguru import logger
 from tqdm import tqdm
 
-logger.remove()
+# logger.remove()
 logger.add(
     "logs/sync.log",
     rotation="10 MB",
@@ -227,11 +227,13 @@ class AzSync:
         self,
         apikey: str,
         db_path: Path | str = "/data/apk/apkindex.db",
+        metadata_path: Path | str = "/data/apk/metadata.jsonl",
         output_dir: Path | str = "/data/apk/downloads",
         max_workers: int = 40,
     ) -> None:
         self.apikey = apikey
         self.db = AzDatabase(db_path)
+        self.metadata_path = Path(metadata_path)
         self.output_dir = Path(output_dir)
         if not self.output_dir.exists():
             self.output_dir.mkdir(parents=True)
@@ -281,9 +283,14 @@ class AzSync:
 
     def download_preparation_worker(self) -> None:
         """Enqueue a record for download."""
-        for record in self.db:
-            self.download_queue.put(record)
-        self.download_queue.shutdown()
+        with open(self.metadata_path, "r") as f:
+            for line in f:
+                if "android.permission.BLUETOOTH" in line:
+                    metadata = json.loads(line)
+                    name = metadata["docid"]
+                    logger.info(f"Found APK {name}")
+                    for record in self.db.search(name):
+                        self.download_queue.put(record)
 
     def run(self) -> None:
         progress_thread = threading.Thread(target=self.progress, daemon=True)
@@ -332,10 +339,17 @@ def sync(
     output_dir: str = typer.Option(
         "/data/apk/downloads", help="Directory to save downloaded APK files"
     ),
+    metadata_path: str = typer.Option("/data/apk/metadata.jsonl", help="Path to the APK metadata"),
     max_workers: int = typer.Option(40, help="Number of concurrent download workers"),
 ) -> None:
     """Sync APK files from Androzoo."""
-    az_sync = AzSync(apikey, db_path, output_dir, max_workers)
+    az_sync = AzSync(
+        apikey=apikey,
+        db_path=db_path,
+        output_dir=output_dir,
+        metadata_path=metadata_path,
+        max_workers=max_workers,
+    )
     az_sync.run()
 
 
