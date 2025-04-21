@@ -74,19 +74,9 @@ class APKRecord:
             markets=data.get("markets", ""),
         )
 
-
-class AzDatabase:
-    def __init__(self, db_path: Path | str = "/data/apk/apkindex.db") -> None:
-        self.db_path = Path(db_path)
-        if self.db_path.is_dir():
-            self.db_path = self.db_path / "apkindex.db"
-
-        # Initialize the database
-        self._init_db()
-
-    def _init_db(self) -> None:
+    @staticmethod
+    def init_db(conn: sqlite3.Connection) -> None:
         """Initialize the database with the APK records table."""
-        conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
 
         # Create the table if it doesn't exist
@@ -105,40 +95,46 @@ class AzDatabase:
             markets TEXT
         )
         """)
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_pkg_name ON apkrecord (pkg_name)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_apkrecord_pkg_name ON apkrecord (pkg_name)")
         conn.commit()
-        conn.close()
+
+
+class AzDatabase:
+    def __init__(self, db_path: Path | str = "apkindex.db") -> None:
+        self.db_path = Path(db_path)
+        if self.db_path.is_dir():
+            self.db_path = self.db_path / "apkindex.db"
+
+        # Initialize the database
+        with sqlite3.connect(self.db_path) as conn:
+            APKRecord.init_db(conn)
 
     def __iter__(self) -> Iterator[APKRecord]:
         """Iterate over the APK records in the database."""
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
 
-        # Fetch records in batches to conserve memory
-        cursor.execute("SELECT * FROM apkrecord")
-        batch_size = 1000
-        while True:
-            rows = cursor.fetchmany(batch_size)
-            if not rows:
-                break
+            # Fetch records in batches to conserve memory
+            cursor.execute("SELECT * FROM apkrecord")
+            batch_size = 1000
+            while True:
+                rows = cursor.fetchmany(batch_size)
+                if not rows:
+                    break
 
-            for row in rows:
-                record_dict = dict(row)
-                yield APKRecord.from_dict(record_dict)
-
-        conn.close()
+                for row in rows:
+                    record_dict = dict(row)
+                    yield APKRecord.from_dict(record_dict)
 
     def get(self, sha256: str) -> Optional[APKRecord]:
         """Get an APK record by its SHA256 hash."""
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
 
-        cursor.execute("SELECT * FROM apkrecord WHERE sha256 = ?", (sha256,))
-        row = cursor.fetchone()
-
-        conn.close()
+            cursor.execute("SELECT * FROM apkrecord WHERE sha256 = ?", (sha256,))
+            row = cursor.fetchone()
 
         if row:
             return APKRecord.from_dict(dict(row))
@@ -146,19 +142,17 @@ class AzDatabase:
 
     def search(self, namelike: str) -> List[APKRecord]:
         """Find APK records by package name."""
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
 
-        if "%" in namelike:
-            cursor.execute("SELECT * FROM apkrecord WHERE pkg_name LIKE ?", (f"%{namelike}%",))
-        else:
-            cursor.execute("SELECT * FROM apkrecord WHERE pkg_name = ?", (namelike,))
-        rows = cursor.fetchall()
+            if "%" in namelike:
+                cursor.execute("SELECT * FROM apkrecord WHERE pkg_name LIKE ?", (f"%{namelike}%",))
+            else:
+                cursor.execute("SELECT * FROM apkrecord WHERE pkg_name = ?", (namelike,))
+            rows = cursor.fetchall()
 
-        conn.close()
-
-        return [APKRecord.from_dict(dict(row)) for row in rows]
+            return [APKRecord.from_dict(dict(row)) for row in rows]
 
     def import_csv(self, csv_path: Path | str) -> None:
         """Import APK records from a CSV file."""
@@ -177,58 +171,58 @@ class AzDatabase:
         )
         current = 0
 
-        conn = sqlite3.connect(self.db_path)
+        with sqlite3.connect(self.db_path) as conn:
+            for chunk in pd.read_csv(
+                csv_path,
+                chunksize=10000,
+                dtype={
+                    "vercode": str,
+                    "vt_detection": str,
+                    "sha256": str,
+                    "sha1": str,
+                    "md5": str,
+                    "pkg_name": str,
+                    "dex_date": str,
+                    "vt_scan_date": str,
+                    "markets": str,
+                },
+                na_values=["NA", "N/A", ""],
+                keep_default_na=False,
+            ):
+                # Fill NA values with empty strings
+                chunk = chunk.fillna("")
 
-        for chunk in pd.read_csv(
-            csv_path,
-            chunksize=10000,
-            dtype={
-                "vercode": str,
-                "vt_detection": str,
-                "sha256": str,
-                "sha1": str,
-                "md5": str,
-                "pkg_name": str,
-                "dex_date": str,
-                "vt_scan_date": str,
-                "markets": str,
-            },
-            na_values=["NA", "N/A", ""],
-            keep_default_na=False,
-        ):
-            # Fill NA values with empty strings
-            chunk = chunk.fillna("")
+                chunk.to_sql(
+                    "apkrecord",
+                    conn,
+                    if_exists="append",
+                    index=False,
+                    method="multi",
+                    chunksize=1000,
+                )
 
-            chunk.to_sql(
-                "apkrecord", conn, if_exists="append", index=False, method="multi", chunksize=1000
-            )
+                current += len(chunk)
+                print(f"Imported {current:,}/{total:,} records", end="\r", flush=True)
 
-            current += len(chunk)
-            print(f"Imported {current:,}/{total:,} records", end="\r", flush=True)
-
-        conn.commit()
-        conn.close()
+            conn.commit()
         print("\nImport completed.")
 
     def count(self) -> int:
         """Count the total number of APK records in the database."""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
-        cursor.execute("SELECT COUNT(*) FROM apkrecord")
-        total = cursor.fetchone()[0]
-
-        conn.close()
-        return total
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM apkrecord")
+            total = cursor.fetchone()[0]
+            return total
 
 
 class AzSync:
     def __init__(
         self,
         apikey: str,
-        db_path: Path | str = "/data/apk/apkindex.db",
-        metadata_path: Path | str = "/data/apk/metadata.jsonl",
-        output_dir: Path | str = "/data/apk/downloads",
+        db_path: Path | str = "apkindex.db",
+        metadata_path: Path | str = "metadata.jsonl",
+        output_dir: Path | str = "downloads",
         max_workers: int = 40,
     ) -> None:
         self.apikey = apikey
@@ -240,6 +234,7 @@ class AzSync:
         self.max_workers = max_workers
         self.download_queue = Queue[APKRecord](maxsize=100)
         self.progress_queue = Queue[str]()  # Queue for sha256 of completed downloads
+        self.lock = threading.Lock()
 
     def progress(self) -> None:
         """Show progress of downloads."""
@@ -252,13 +247,18 @@ class AzSync:
         while True:
             try:
                 record = self.download_queue.get()
+                logger.info(f"Downloading APK: {record.sha256}")
             except ShutDown:
                 break
 
             file_path = self.output_dir / f"{record.sha256}.apk"
-            if file_path.exists():
-                logger.info(f"File {file_path} already exists, skipping download.")
-                self.progress_queue.put(record.sha256)
+            part_path = self.output_dir / f"{record.sha256}.apk.part"
+
+            with self.lock:
+                if file_path.exists():
+                    logger.info(f"File {file_path} already exists, skipping download.")
+                    continue
+
                 continue
 
             try:
@@ -279,7 +279,7 @@ class AzSync:
                 # Push to progress queue on success
                 self.progress_queue.put(record.sha256)
             except Exception as e:
-                logger.error(f"Failed to download APK {record.sha256}: {e}")
+                logger.exception(e)
 
     def download_preparation_worker(self) -> None:
         """Enqueue a record for download."""
@@ -291,6 +291,7 @@ class AzSync:
                     logger.info(f"Found Bluetooth app: {name}")
                     for record in self.db.search(name):
                         self.download_queue.put(record)
+                        logger.info(f"Enqueued record for download: {record.sha256}")
 
     def run(self) -> None:
         progress_thread = threading.Thread(target=self.progress, daemon=True)
@@ -313,9 +314,9 @@ class AzSync:
 
 @app.command()
 def dbinit(
-    db_path: str = typer.Option("/data/apk/apkindex.db", help="Path to the APK database"),
+    db_path: str = typer.Option("apk/apkindex.db", help="Path to the APK database"),
     csv_path: str = typer.Option(
-        "/data/apk/apkindex.csv",
+        "apk/apkindex.csv",
         help="Path to the CSV file containing APK records",
     ),
     force: bool = typer.Option(False, help="Force re-import of the CSV file"),
@@ -335,12 +336,16 @@ def dbinit(
 @app.command()
 def sync(
     apikey: str = typer.Argument(..., help="Androzoo API key"),
-    db_path: str = typer.Option("/data/apk/apkindex.db", help="Path to the APK database"),
+    db_path: str = typer.Option("apkindex.db", "-d", "--db", help="Path to the APK database"),
     output_dir: str = typer.Option(
-        "/data/apk/downloads", help="Directory to save downloaded APK files"
+        "downloads", "-o", "--out", help="Directory to save downloaded APK files"
     ),
-    metadata_path: str = typer.Option("/data/apk/metadata.jsonl", help="Path to the APK metadata"),
-    max_workers: int = typer.Option(40, help="Number of concurrent download workers"),
+    metadata_path: str = typer.Option(
+        "metadata.jsonl", "-m", "--metadata", help="Path to the APK metadata"
+    ),
+    max_workers: int = typer.Option(
+        40, "-n", "--num-workers", help="Number of concurrent download workers"
+    ),
 ) -> None:
     """Sync APK files from Androzoo."""
     az_sync = AzSync(
@@ -355,7 +360,7 @@ def sync(
 
 @app.command()
 def search(
-    db_path: str = typer.Option("/data/apk/apkindex.db", help="Path to the APK database"),
+    db_path: str = typer.Option("apkindex.db", help="Path to the APK database"),
     namelike: str = typer.Argument(..., help="Package name or part of it"),
 ) -> None:
     """Find APK records by package name."""
