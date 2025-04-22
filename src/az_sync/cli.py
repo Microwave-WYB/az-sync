@@ -1,7 +1,7 @@
 import json
 import sys
 from pathlib import Path
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 
 import typer
 
@@ -138,7 +138,7 @@ def download(
 ):
     """Download APKs by SHA256"""
     ws = ensure_workspace()
-    sha256iter: Iterator[str] = iter(sha256s) if sha256s else sys.stdin
+    sha256iter: Iterable[str] = sha256s if sha256s else sys.stdin
     if max_workers:
         downloader = AzDownload(ws.config.apikey, output_dir, max_workers)
     else:
