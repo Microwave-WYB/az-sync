@@ -1,8 +1,23 @@
-import typer
+import sys
+from az_sync.cli import root
+from az_sync.core import AzDownload, AzDatabase
+from loguru import logger
 
-from az_sync.core import app
+logger.remove()  # Do not print to console
+logger.add(
+    "logs/sync_{time:%Y-%m-%d_%H-%M-%S}.log",
+    rotation="50 MB",
+)
 
 
 def main() -> None:
     """Main function to run the az_sync CLI."""
-    app()
+    logger.info(f"Command: {' '.join(sys.argv)}")
+    try:
+        root()
+    except Exception as e:
+        logger.exception(e)
+        raise
+
+
+__all__ = []

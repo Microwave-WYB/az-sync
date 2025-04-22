@@ -6,16 +6,20 @@ readme = "README.md"
 authors = [{ name = "Yibo Wei", email = "david_wyb2001@outlook.com" }]
 requires-python = ">=3.13"
 dependencies = [
+    "ants",
     "httpx>=0.28.1",
     "loguru>=0.7.3",
-    "pandas>=2.2.3",
+    "pydantic>=2.11.3",
     "tqdm>=4.67.1",
     "typer-slim>=0.15.2",
 ]
 
 [project.scripts]
-azsync = "az_sync:main"
+az = "az_sync:main"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.uv.sources]
+ants = { git = "https://github.com/Microwave-WYB/ants.git" }
