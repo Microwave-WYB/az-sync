@@ -10,6 +10,14 @@ from az_sync.core import AzConfig, AzDatabase, AzDownload, AzWorkspace
 root = typer.Typer(
     help="Sync APK files from Androzoo.",
 )
+page_app = typer.Typer(
+    help="Get a page of APK info or metadata",
+)
+root.add_typer(page_app, name="page")
+iter_app = typer.Typer(
+    help="Iterate over APK info or metadata",
+)
+root.add_typer(iter_app, name="iter")
 
 
 def ensure_workspace() -> AzWorkspace:
@@ -76,7 +84,7 @@ def init(
 
 
 @root.command()
-def info(
+def apk(
     queries: list[str] | None = typer.Argument(
         None, help="SHA256 | Package name (support wildcard characteres % and _)"
     ),
@@ -91,22 +99,9 @@ def info(
             typer.echo(result.model_dump_json(indent=indent))
 
 
-@root.command("list")
-def list_(
-    offset: int = typer.Option(0, "-o", help="Offset of lines to display"),
-    limit: int = typer.Option(50, "-n", help="Number of lines to display"),
-    indent: int | None = typer.Option(None, help="JSON indentation level"),
-):
-    """Display the first few lines of the APK list"""
-    ws = ensure_workspace()
-    db = AzDatabase(ws.db_path)
-    for apk in db.list_(offset=offset, limit=limit):
-        typer.echo(apk.model_dump_json(indent=indent))
-
-
 @root.command()
 def metadata(
-    pkg_name: str | None = typer.Option(None, "-n", "--pkgname", help="Package name"),
+    pkg_name: str | None = typer.Option(None, "-p", "--pkgname", help="Package name"),
     vercode: int | None = typer.Option(None, "-v", "--vercode", help="Version code"),
     contains: str | None = typer.Option(
         None, "-c", "--contains", help="Filter by substring in metadata jsonl"
@@ -124,6 +119,54 @@ def metadata(
     metadata_list = db.metadata(pkg_name=pkg_name, vercode=vercode, contains=contains)
     for metadata in metadata_list:
         typer.echo(json.dumps(json.loads(metadata.data), indent=indent))
+
+
+@page_app.command("apk")
+def page_apk(
+    offset: int = typer.Option(0, "-o", help="Offset of lines to display", min=0),
+    limit: int = typer.Option(50, "-n", help="Number of lines to display", min=1, max=500),
+    indent: int | None = typer.Option(None, help="JSON indentation level"),
+):
+    """Display the first few lines of the APK list"""
+    ws = ensure_workspace()
+    db = AzDatabase(ws.db_path)
+    for apk in db.list_apks(offset=offset, limit=limit):
+        typer.echo(apk.model_dump_json(indent=indent))
+
+
+@page_app.command("metadata")
+def page_metadata(
+    offset: int = typer.Option(0, "-o", help="Offset of lines to display", min=0),
+    limit: int = typer.Option(50, "-n", help="Number of lines to display", min=1, max=500),
+    indent: int | None = typer.Option(None, help="JSON indentation level"),
+):
+    """Display the first few lines of the APK metadata"""
+    ws = ensure_workspace()
+    db = AzDatabase(ws.db_path)
+    for m in db.list_metadata(offset=offset, limit=limit):
+        typer.echo(json.dumps(json.loads(m.data), indent=indent))
+
+
+@iter_app.command("apk")
+def iter_apk(
+    indent: int = typer.Option(None, help="JSON indentation level"),
+):
+    """Iterate over the APKs"""
+    ws = ensure_workspace()
+    db = AzDatabase(ws.db_path)
+    for r in db.iter_records():
+        typer.echo(r.model_dump_json(indent=indent))
+
+
+@iter_app.command("metadata")
+def iter_metadata(
+    indent: int = typer.Option(None, help="JSON indentation level"),
+):
+    """Iterate over the APK metadata"""
+    ws = ensure_workspace()
+    db = AzDatabase(ws.db_path)
+    for m in db.iter_metadata():
+        typer.echo(json.dumps(json.loads(m.data), indent=indent))
 
 
 @root.command()

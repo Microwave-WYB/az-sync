@@ -20,7 +20,6 @@ import az_sync.sql
 from az_sync.utils import count_lines, gunzip, is_sha256, consume
 
 
-
 class APKRecord(BaseModel):
     """APK record class represented as a dataclass."""
 
@@ -147,6 +146,7 @@ class AzDatabase:
 
     def iter_records(self) -> Iterator[APKRecord]:
         """Iterate over the APK records in the database."""
+        self.conn.row_factory = APKRecord.row_factory
         cursor = self.conn.cursor()
         cursor.execute("SELECT * FROM apkrecord")
         batch_size = 1000
@@ -160,6 +160,7 @@ class AzDatabase:
 
     def iter_metadata(self) -> Iterator[Metadata]:
         """Iterate over the metadata records in the database."""
+        self.conn.row_factory = Metadata.row_factory
         cursor = self.conn.cursor()
         cursor.execute("SELECT * FROM metadata")
         batch_size = 1000
@@ -218,12 +219,22 @@ class AzDatabase:
         while results := cursor.fetchmany(100):
             yield from results
 
-    def list_(self, offset: int = 0, limit: int = 100) -> list[APKRecord]:
+    def list_apks(self, offset: int = 0, limit: int = 100) -> list[APKRecord]:
         """List APK records in the database."""
         self.conn.row_factory = APKRecord.row_factory
         cursor = self.conn.cursor()
         cursor.execute(
             "SELECT * FROM apkrecord LIMIT ? OFFSET ?",
+            (limit, offset),
+        )
+        return cursor.fetchall()
+
+    def list_metadata(self, offset: int = 0, limit: int = 100) -> list[Metadata]:
+        """List metadata records in the database."""
+        self.conn.row_factory = Metadata.row_factory
+        cursor = self.conn.cursor()
+        cursor.execute(
+            "SELECT * FROM metadata LIMIT ? OFFSET ?",
             (limit, offset),
         )
         return cursor.fetchall()
