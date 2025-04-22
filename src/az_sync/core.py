@@ -203,8 +203,11 @@ class AzDatabase:
         # Combine conditions with AND
         stmt = "SELECT * FROM apkrecord WHERE " + " AND ".join(conditions)
 
-        # Execute with the correct arguments
-        while results := cursor.execute(stmt, args).fetchmany(100):
+        # Execute the query once
+        cursor.execute(stmt, args)
+
+        # Then fetch results in batches
+        while results := cursor.fetchmany(100):
             yield from results
 
     def search_metadata(
@@ -232,9 +235,10 @@ class AzDatabase:
         # Combine conditions with AND
         stmt = "SELECT * FROM metadata WHERE " + " AND ".join(conditions)
 
-        # Execute with the correct arguments
+        # Execute the query once
         cursor.execute(stmt, args)
 
+        # Then fetch results in batches
         while results := cursor.fetchmany(100):
             yield from results
 
