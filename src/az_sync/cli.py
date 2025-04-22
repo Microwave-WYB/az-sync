@@ -1,7 +1,7 @@
 import json
 import sys
 from pathlib import Path
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable
 
 import typer
 

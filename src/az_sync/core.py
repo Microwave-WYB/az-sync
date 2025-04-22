@@ -7,7 +7,7 @@ from collections.abc import Iterable, Iterator
 from importlib import resources
 from itertools import batched
 from pathlib import Path
-from queue import Queue, ShutDown
+from queue import Queue
 from typing import Self
 
 import ants
