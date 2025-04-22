@@ -21,7 +21,7 @@ from az_sync.utils import count_lines, gunzip, is_sha256, consume
 
 
 class APKRecord(BaseModel):
-    """APK record class represented as a dataclass."""
+    """APK records represented as a dataclass."""
 
     sha256: str
     sha1: str
@@ -42,6 +42,8 @@ class APKRecord(BaseModel):
 
 
 class Metadata(BaseModel):
+    """Metadata represented as a dataclass."""
+
     pkg_name: str
     vercode: str
     data: str
@@ -60,6 +62,8 @@ class AzConfig(BaseModel):
 
 
 class AzWorkspace:
+    """Manages resources that are required for the az command."""
+
     def __init__(self, workspace_path: Path) -> None:
         if workspace_path.is_file():
             raise ValueError("Workspace path must be a directory")
@@ -135,6 +139,8 @@ class AzWorkspace:
 
 
 class AzDatabase:
+    """Provides access to the SQLite database."""
+
     def __init__(self, db_path: Path) -> None:
         self.db_path = db_path
 
@@ -319,6 +325,8 @@ class AzDatabase:
 
 
 class AzDownload:
+    """Manages the download of APK files."""
+
     def __init__(
         self,
         apikey: str,
