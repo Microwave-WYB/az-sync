@@ -89,8 +89,9 @@ def init(
 
 @search_app.command("apk")
 def search_apk(
-    pkg_names: list[str] | None = typer.Argument(
-        None, help="Package name (supports % and _ wildcard)"
+    pkg_names: list[str] | None = typer.Argument(None, help="Package name"),
+    wildcard: bool = typer.Option(
+        False, "--wildcard", help="Enable wildcard search. Disabled by default"
     ),
     indent: int | None = typer.Option(None, help="JSON indentation level"),
 ) -> None:
@@ -99,8 +100,7 @@ def search_apk(
     db = AzDatabase(ws.db_path)
     pkg_name_iter: Iterable[str] = pkg_names if pkg_names is not None else sys.stdin
     for name in pkg_name_iter:
-        name = name.strip()
-        results = db.search_apk(name)
+        results = db.search_apk(name.strip(), wildcard)
         for result in results:
             typer.echo(result.model_dump_json(indent=indent))
 

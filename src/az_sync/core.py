@@ -178,7 +178,7 @@ class AzDatabase:
             for row in rows:
                 yield Metadata.model_validate(dict(row))
 
-    def search_apk(self, pkg_name: str) -> Iterator[APKRecord]:
+    def search_apk(self, pkg_name: str, wildcard: bool = False) -> Iterator[APKRecord]:
         """Find APK records by sha256, package name, or version code."""
 
         self.conn.row_factory = APKRecord.row_factory
@@ -186,7 +186,7 @@ class AzDatabase:
 
         # Build conditions and args lists
         stmt = "SELECT * FROM apkrecord WHERE "
-        if "%" in pkg_name or "_" in pkg_name:
+        if wildcard:
             cursor.execute(stmt + "pkg_name LIKE ?", (pkg_name,))
         else:
             cursor.execute(stmt + "pkg_name = ?", (pkg_name,))
