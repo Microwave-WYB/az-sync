@@ -1,3 +1,4 @@
+import atexit
 import csv
 import json
 import sqlite3
@@ -309,7 +310,10 @@ class AzDownload:
     def spawn_worker(self) -> threading.Thread:
         def worker() -> None:
             for sha256 in consume(self.download_queue):
-                self.download_single(sha256)
+                try:
+                    self.download_single(sha256)
+                except Exception as e:
+                    logger.error(f"Error downloading {sha256}: {e}")
 
         return threading.Thread(target=worker)
 
@@ -337,35 +341,29 @@ class AzDownload:
                 self.progress_queue.put(object())
                 return
             dest_part.touch()
-        try:
-            with self.client.stream(
-                "GET", "https://androzoo.uni.lu/api/download", params=dict(sha256=sha256)
-            ) as res:
-                res.raise_for_status()
-                with open(dest_part, "wb") as f:
-                    for chunk in res.iter_bytes():
-                        f.write(chunk)
-            with self.lock:
-                dest_part.rename(dest)
-                logger.info(f"File {dest} download completed.")
-            self.progress_queue.put(object())
-        except KeyboardInterrupt:
-            logger.info("Download interrupted by user.")
-            dest_part.unlink(missing_ok=True)
-            raise
+            atexit.register(lambda: dest_part.unlink(missing_ok=True))
+        with self.client.stream(
+            "GET", "https://androzoo.uni.lu/api/download", params=dict(sha256=sha256)
+        ) as res:
+            res.raise_for_status()
+            with open(dest_part, "wb") as f:
+                for chunk in res.iter_bytes():
+                    f.write(chunk)
+        with self.lock:
+            dest_part.rename(dest)
+            logger.info(f"File {dest} download completed.")
+        self.progress_queue.put(object())
 
     def download_all(self, sha256s: Iterable[str]) -> None:
+        download_threads = [self.spawn_worker() for _ in range(self.max_workers)]
+        if not hasattr(sha256s, "__len__"):
+            pbar_thread = self.spawn_pbar()
+        else:
+            pbar_thread = self.spawn_pbar(total=getattr(sha256s, "__len__")())
         try:
-            if not hasattr(sha256s, "__len__"):
-                pbar_thread = self.spawn_pbar()
-            else:
-                pbar_thread = self.spawn_pbar(total=getattr(sha256s, "__len__")())
             pbar_thread.start()
-            download_threads = []
-            for _ in range(self.max_workers):
-                download_thread = self.spawn_worker()
-                download_thread.start()
-                download_threads.append(download_thread)
+            for thread in download_threads:
+                thread.start()
             for sha256 in sha256s:
                 sha256 = sha256.strip()
                 self.download_queue.put(sha256)
@@ -377,4 +375,7 @@ class AzDownload:
         except KeyboardInterrupt:
             self.download_queue.shutdown(immediate=True)
             self.progress_queue.shutdown(immediate=True)
+            for thread in download_threads:
+                thread.join(timeout=0)
+            pbar_thread.join(timeout=0)
             raise
