@@ -178,39 +178,18 @@ class AzDatabase:
             for row in rows:
                 yield Metadata.model_validate(dict(row))
 
-    def search_apk(
-        self, sha256: str | None = None, pkg_name: str | None = None, vercode: int | None = None
-    ) -> Iterator[APKRecord]:
+    def search_apk(self, pkg_name: str) -> Iterator[APKRecord]:
         """Find APK records by sha256, package name, or version code."""
-        if not any([sha256, pkg_name, vercode]):
-            raise ValueError("At least one of sha256, pkg_name, or vercode must be provided")
 
         self.conn.row_factory = APKRecord.row_factory
         cursor = self.conn.cursor()
 
-        conditions = []
-        args = []
-
         # Build conditions and args lists
-        if sha256 is not None:
-            conditions.append("sha256 = ?")
-            args.append(sha256)
-        if pkg_name is not None:
-            if "%" in pkg_name:
-                conditions.append("pkg_name LIKE ?")
-                args.append(pkg_name)
-            else:
-                conditions.append("pkg_name = ?")
-                args.append(pkg_name)
-        if vercode is not None:
-            conditions.append("vercode = ?")
-            args.append(str(vercode))
-
-        # Combine conditions with AND
-        stmt = "SELECT * FROM apkrecord WHERE " + " AND ".join(conditions)
-
-        # Execute the query once
-        cursor.execute(stmt, args)
+        stmt = "SELECT * FROM apkrecord WHERE "
+        if "%" in pkg_name or "_" in pkg_name:
+            cursor.execute(stmt + "pkg_name LIKE ?", (pkg_name,))
+        else:
+            cursor.execute(stmt + "pkg_name = ?", (pkg_name,))
 
         # Then fetch results in batches
         while results := cursor.fetchmany(100):

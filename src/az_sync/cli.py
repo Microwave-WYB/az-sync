@@ -89,26 +89,19 @@ def init(
 
 @search_app.command("apk")
 def search_apk(
-    sha256: str | None = typer.Option(None, "-s", "--sha256", help="SHA256 hash of the APK"),
-    pkg_name: str | None = typer.Option(
-        None, "-p", "--pkgname", help="Package name (supports % wildcard)"
+    pkg_names: list[str] | None = typer.Argument(
+        None, help="Package name (supports % and _ wildcard)"
     ),
-    vercode: int | None = typer.Option(None, "-v", "--vercode", help="Version code"),
     indent: int | None = typer.Option(None, help="JSON indentation level"),
 ) -> None:
     """Find APK records by sha256, package name, or version code"""
-    if not any([sha256, pkg_name, vercode]):
-        typer.echo(
-            "Please provide at least one of the following options: --sha256, --pkgname, --vercode"
-        )
-        raise typer.Exit(1)
-
     ws = ensure_workspace()
     db = AzDatabase(ws.db_path)
-    results = db.search_apk(sha256=sha256, pkg_name=pkg_name, vercode=vercode)
-
-    for result in results:
-        typer.echo(result.model_dump_json(indent=indent))
+    pkg_name_iter = pkg_names if pkg_names is not None else sys.stdin
+    for name in pkg_name_iter:
+        results = db.search_apk(name)
+        for result in results:
+            typer.echo(result.model_dump_json(indent=indent))
 
 
 @search_app.command("metadata")
