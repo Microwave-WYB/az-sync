@@ -10,11 +10,11 @@ from pathlib import Path
 from queue import Queue, ShutDown
 from typing import Self
 
+import ants
 import httpx
 from loguru import logger
 from pydantic import BaseModel
 from tqdm import tqdm
-import ants
 
 import az_sync.sql
 from az_sync.utils import count_lines, gunzip, is_sha256
