@@ -97,8 +97,9 @@ def search_apk(
     """Find APK records by sha256, package name, or version code"""
     ws = ensure_workspace()
     db = AzDatabase(ws.db_path)
-    pkg_name_iter = pkg_names if pkg_names is not None else sys.stdin
+    pkg_name_iter: Iterable[str] = pkg_names if pkg_names is not None else sys.stdin
     for name in pkg_name_iter:
+        name = name.strip()
         results = db.search_apk(name)
         for result in results:
             typer.echo(result.model_dump_json(indent=indent))
