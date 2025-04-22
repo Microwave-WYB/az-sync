@@ -172,23 +172,42 @@ class AzDatabase:
             for row in rows:
                 yield Metadata.model_validate(dict(row))
 
-    def search(self, pkg_name_or_sha256: str) -> list[APKRecord]:
-        """Find APK records by package name."""
+    def search_apk(
+        self, sha256: str | None = None, pkg_name: str | None = None, vercode: int | None = None
+    ) -> Iterator[APKRecord]:
+        """Find APK records by sha256, package name, or version code."""
+        if not any([sha256, pkg_name, vercode]):
+            raise ValueError("At least one of sha256, pkg_name, or vercode must be provided")
+
         self.conn.row_factory = APKRecord.row_factory
         cursor = self.conn.cursor()
 
-        if "%" in pkg_name_or_sha256:
-            cursor.execute(
-                "SELECT * FROM apkrecord WHERE pkg_name LIKE ?",
-                (f"%{pkg_name_or_sha256}%",),
-            )
-        elif is_sha256(pkg_name_or_sha256):
-            cursor.execute("SELECT * FROM apkrecord WHERE sha256 = ?", (pkg_name_or_sha256,))
-        else:
-            cursor.execute("SELECT * FROM apkrecord WHERE pkg_name = ?", (pkg_name_or_sha256,))
-        return cursor.fetchall()
+        conditions = []
+        args = []
 
-    def metadata(
+        # Build conditions and args lists
+        if sha256 is not None:
+            conditions.append("sha256 = ?")
+            args.append(sha256)
+        if pkg_name is not None:
+            if "%" in pkg_name:
+                conditions.append("pkg_name LIKE ?")
+                args.append(pkg_name)
+            else:
+                conditions.append("pkg_name = ?")
+                args.append(pkg_name)
+        if vercode is not None:
+            conditions.append("vercode = ?")
+            args.append(str(vercode))
+
+        # Combine conditions with AND
+        stmt = "SELECT * FROM apkrecord WHERE " + " AND ".join(conditions)
+
+        # Execute with the correct arguments
+        while results := cursor.execute(stmt, args).fetchmany(100):
+            yield from results
+
+    def search_metadata(
         self, pkg_name: str | None = None, vercode: int | None = None, contains: str | None = None
     ) -> Iterator[Metadata]:
         if not any([pkg_name, vercode, contains]):

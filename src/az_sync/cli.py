@@ -18,6 +18,10 @@ iter_app = typer.Typer(
     help="Iterate over APK info or metadata",
 )
 root.add_typer(iter_app, name="iter")
+search_app = typer.Typer(
+    help="Search for APK info or metadata",
+)
+root.add_typer(search_app, name="search")
 
 
 def ensure_workspace() -> AzWorkspace:
@@ -83,24 +87,32 @@ def init(
         raise typer.Exit(1)
 
 
-@root.command()
-def apk(
-    queries: list[str] | None = typer.Argument(
-        None, help="SHA256 | Package name (support wildcard characteres % and _)"
+@search_app.command("apk")
+def search_apk(
+    sha256: str | None = typer.Option(None, "-s", "--sha256", help="SHA256 hash of the APK"),
+    pkg_name: str | None = typer.Option(
+        None, "-p", "--pkgname", help="Package name (supports % wildcard)"
     ),
+    vercode: int | None = typer.Option(None, "-v", "--vercode", help="Version code"),
     indent: int | None = typer.Option(None, help="JSON indentation level"),
 ) -> None:
-    """Find APK records by package name or sha256"""
+    """Find APK records by sha256, package name, or version code"""
+    if not any([sha256, pkg_name, vercode]):
+        typer.echo(
+            "Please provide at least one of the following options: --sha256, --pkgname, --vercode"
+        )
+        raise typer.Exit(1)
+
     ws = ensure_workspace()
     db = AzDatabase(ws.db_path)
-    qiter: Iterator[str] = iter(queries) if queries else sys.stdin
-    for query in qiter:
-        for result in db.search(query.strip()):
-            typer.echo(result.model_dump_json(indent=indent))
+    results = db.search_apk(sha256=sha256, pkg_name=pkg_name, vercode=vercode)
+
+    for result in results:
+        typer.echo(result.model_dump_json(indent=indent))
 
 
-@root.command()
-def metadata(
+@search_app.command("metadata")
+def search_metadata(
     pkg_name: str | None = typer.Option(None, "-p", "--pkgname", help="Package name"),
     vercode: int | None = typer.Option(None, "-v", "--vercode", help="Version code"),
     contains: str | None = typer.Option(
@@ -116,9 +128,9 @@ def metadata(
         raise typer.Exit(1)
     ws = ensure_workspace()
     db = AzDatabase(ws.db_path)
-    metadata_list = db.metadata(pkg_name=pkg_name, vercode=vercode, contains=contains)
-    for metadata in metadata_list:
-        typer.echo(json.dumps(json.loads(metadata.data), indent=indent))
+    results = db.search_metadata(pkg_name=pkg_name, vercode=vercode, contains=contains)
+    for result in results:
+        typer.echo(json.dumps(json.loads(result.data), indent=indent))
 
 
 @page_app.command("apk")
