@@ -8,6 +8,17 @@ logger.add(
     "logs/sync_{time:%Y-%m-%d_%H-%M-%S}.log",
     rotation="50 MB",
 )
+logger.add(
+    "logs/sync_latest.log",
+    rotation="50 MB",
+)
+logger.add(
+    "logs/error.log",
+    rotation="50 MB",
+    level="ERROR",
+    backtrace=True,
+    diagnose=True,
+)
 
 
 def main() -> None:
