@@ -326,7 +326,7 @@ class AzDownload:
             for sha256 in consume(self.download_queue):
                 try:
                     self.download_single(sha256)
-                except httpx.HTTPStatusError as e:
+                except httpx.HTTPError as e:
                     logger.error(f"HTTP error downloading {sha256}: {e}. Will retry.")
                     self.download_queue.put(sha256)  # Retry failed download
                 except Exception as e:
@@ -359,14 +359,18 @@ class AzDownload:
                 self.progress_queue.put(object())
                 return
             dest_part.touch()
-            atexit.register(lambda: dest_part.unlink(missing_ok=True))
         with self.client.stream(
             "GET", "https://androzoo.uni.lu/api/download", params=dict(sha256=sha256)
         ) as res:
             res.raise_for_status()
             with open(dest_part, "wb") as f:
-                for chunk in res.iter_bytes():
-                    f.write(chunk)
+                try:
+                    for chunk in res.iter_bytes(1024 * 1024):
+                        f.write(chunk)
+                except httpx.ReadError as e:
+                    logger.exception(e)
+                    dest_part.unlink(missing_ok=True)
+                    raise
         with self.lock:
             dest_part.rename(dest)
             logger.info(f"File {dest} download completed.")
