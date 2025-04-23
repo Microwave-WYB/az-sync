@@ -326,8 +326,12 @@ class AzDownload:
             for sha256 in consume(self.download_queue):
                 try:
                     self.download_single(sha256)
+                except httpx.HTTPStatusError as e:
+                    logger.error(f"HTTP error downloading {sha256}: {e}. Will retry.")
+                    self.download_queue.put(sha256)  # Retry failed download
                 except Exception as e:
-                    logger.error(f"Error downloading {sha256}: {e}")
+                    logger.error(f"Critical error during downloading {sha256}: {e}")
+                    raise
 
         return threading.Thread(target=worker)
 
@@ -383,7 +387,10 @@ class AzDownload:
                 self.download_queue.put(sha256)
             self.download_queue.shutdown()
             for thread in download_threads:
-                thread.join()
+                try:
+                    thread.join()
+                except Exception:
+                    raise
             self.progress_queue.shutdown()
             pbar_thread.join()
         except KeyboardInterrupt:
