@@ -321,6 +321,8 @@ class AzDownload:
         self.lock = threading.Lock()
         self.client = httpx.Client(params=dict(apikey=apikey))
 
+        self.existing_sha256s = set[str]()
+
     def spawn_worker(self) -> threading.Thread:
         def worker() -> None:
             for sha256 in consume(self.download_queue):
@@ -344,7 +346,10 @@ class AzDownload:
         return threading.Thread(target=worker)
 
     def download_single(self, sha256: str) -> None:
-        sha256 = sha256.strip().upper()
+        if sha256 in self.existing_sha256s:
+            logger.info(f"{sha256} already exists.")
+            self.progress_queue.put(object())
+            return
         if not is_sha256(sha256):
             raise ValueError(f"Invalid SHA256 hash: {sha256}")
         dest = self.output_dir / f"{sha256}.apk"
@@ -379,8 +384,12 @@ class AzDownload:
             dest_part.rename(dest)
             logger.info(f"File {dest} download completed.")
         self.progress_queue.put(object())
+        self.existing_sha256s.add(sha256)
 
     def download_all(self, sha256s: Iterable[str]) -> None:
+        for file in self.output_dir.glob("*.apk"):
+            self.existing_sha256s.add(file.stem)
+        sha256s = filter(lambda x: x.strip().upper(), sha256s)
         download_threads = [self.spawn_worker() for _ in range(self.max_workers)]
         if not hasattr(sha256s, "__len__"):
             pbar_thread = self.spawn_pbar()
