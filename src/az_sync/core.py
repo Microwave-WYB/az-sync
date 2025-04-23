@@ -349,16 +349,20 @@ class AzDownload:
             raise ValueError(f"Invalid SHA256 hash: {sha256}")
         dest = self.output_dir / f"{sha256}.apk"
         dest_part = self.output_dir / f"{sha256}.apk.part"
-        with self.lock:
-            if dest.exists():
-                logger.info(f"File {dest} already exists. Skipping download.")
-                self.progress_queue.put(object())
-                return
-            if dest_part.exists():
-                logger.info(f"File {dest_part} is being downloaded. Skipping download.")
-                self.progress_queue.put(object())
-                return
-            dest_part.touch()
+
+        if dest.exists():
+            logger.info(f"{dest} already exists.")
+            self.progress_queue.put(object())
+            return
+
+        try:
+            with open(dest_part, "xb"):
+                pass
+        except FileExistsError:
+            logger.info(f"{dest_part} is being downloaded. Skipping download.")
+            self.progress_queue.put(object())
+            return
+
         with self.client.stream(
             "GET", "https://androzoo.uni.lu/api/download", params=dict(sha256=sha256)
         ) as res:
