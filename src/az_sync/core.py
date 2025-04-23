@@ -389,7 +389,7 @@ class AzDownload:
     def download_all(self, sha256s: Iterable[str]) -> None:
         for file in self.output_dir.glob("*.apk"):
             self.existing_sha256s.add(file.stem)
-        sha256s = filter(lambda x: x.strip().upper(), sha256s)
+        sha256s = filter(lambda x: x not in self.existing_sha256s, sha256s)
         download_threads = [self.spawn_worker() for _ in range(self.max_workers)]
         if not hasattr(sha256s, "__len__"):
             pbar_thread = self.spawn_pbar()
