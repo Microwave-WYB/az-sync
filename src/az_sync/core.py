@@ -1,4 +1,3 @@
-import atexit
 import csv
 import json
 import sqlite3
@@ -332,7 +331,7 @@ class AzDownload:
                     logger.error(f"HTTP error downloading {sha256}: {e}. Will retry.")
                     self.download_queue.put(sha256)  # Retry failed download
                 except Exception as e:
-                    logger.error(f"Critical error during downloading {sha256}: {e}")
+                    logger.exception(e)
                     raise
 
         return threading.Thread(target=worker)
