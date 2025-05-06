@@ -2,6 +2,7 @@ import json
 import sys
 from pathlib import Path
 from collections.abc import Iterable
+from loguru import logger
 
 import typer
 
@@ -24,6 +25,32 @@ search_app = typer.Typer(
 root.add_typer(search_app, name="search")
 
 
+def set_logger(verbose: bool) -> None:
+    if not verbose:
+        logger.remove()
+    else:
+        logger.add(sys.stdout)
+
+    logger.add(
+        "logs/sync_{time:%Y-%m-%d_%H-%M-%S}.log",
+        rotation="50 MB",
+    )
+    logger.add(
+        "logs/sync_latest.log",
+        rotation="50 MB",
+    )
+    logger.add(
+        "logs/error.log",
+        rotation="50 MB",
+        level="ERROR",
+        backtrace=True,
+        diagnose=True,
+    )
+
+    """Main function to run the az_sync CLI."""
+    logger.info(f"Command: {' '.join(sys.argv)}")
+
+
 def ensure_workspace() -> AzWorkspace:
     if (ws := AzWorkspace.search_workspace(Path.cwd())) is None:
         typer.echo("No workspace found, run 'azsync init' first")
@@ -39,8 +66,10 @@ def init(
     skip: list[str] | None = typer.Option(
         None, help="Skip steps: [fetch-apk|fetch-metadata|import-metadata|import-apk-list] ..."
     ),
+    verbose: bool = typer.Option(False, "-v", help="Verbose output"),
 ) -> None:
     """Initialize azsync workspace"""
+    set_logger(verbose)
     try:
         user_option = (
             input(
@@ -184,8 +213,10 @@ def download(
     max_workers: int | None = typer.Option(
         None, "-w", help="Overwrite max_workers in the config file and download"
     ),
+    verbose: bool = typer.Option(False, "-v", help="Verbose output"),
 ):
     """Download APKs by SHA256"""
+    set_logger(verbose)
     ws = ensure_workspace()
     sha256iter: Iterable[str] = sha256s if sha256s else sys.stdin
     if max_workers:
